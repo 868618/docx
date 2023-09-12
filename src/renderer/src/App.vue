@@ -30,7 +30,7 @@
               placeholder="请选择考试分类"
               clearable
               filterable
-              style="width: 400px"
+              style="width: 100%"
               @change="nameChange"
             >
               <el-option
@@ -39,7 +39,7 @@
                 :label="item == '' ? '空' : item"
                 :value="item"
               >
-                <div style="overflow: hidden; max-width: 300px; text-overflow: ellipsis">
+                <div style="overflow: hidden; width: 100%; text-overflow: ellipsis">
                   {{ index + 1 }}： {{ item }}
                 </div>
               </el-option>
@@ -75,7 +75,7 @@
               placeholder="请选择题型"
               clearable
               multiple
-              style="width: 90%"
+              style="width: 100%"
             >
               <el-option
                 v-for="item in formData.types"
@@ -152,18 +152,24 @@ const result = reactive<{ all: IList[]; kind: number; type: number; name: number
 })
 
 watch([filters, list], ([nFilters]) => {
-  console.log('AT-[ nFilters &&&&&********** ]', nFilters)
+  // console.log('AT-[ nFilters &&&&&********** ]', nFilters)
   const { pickBy, union } = lodash
   const selected = pickBy(nFilters, (value) => value.length)
-  console.log('AT-[ selected &&&&&********** ]', selected)
+  // console.log('AT-[ selected &&&&&********** ]', selected)
 
+  // console.log('AT-[ elected.name &&&&&********** ]', selected.name)
   if (selected.name) {
     // formData.kinds = union(
     //   list.value.filter((item) => item.name == selected.name).map((item) => item.kind)
     // )
+    console.log(
+      'AT-[ pppppppp ]',
+      list.value.filter((item) => item.name == selected.name)
+    )
     formData.types = union(
       list.value.filter((item) => item.name == selected.name).map((item) => item.type)
     )
+    console.log('AT-[ formData.types &&&&&********** ]', formData.types)
   }
 
   // if (selected.kind) {
@@ -180,22 +186,10 @@ watch([filters, list], ([nFilters]) => {
       .filter((item) => item.name == selected.name)
       // .filter((item) => nFilters.kind.some((k) => item.kind == k))
       .filter((item) => nFilters.type.some((t) => item.type == t))
+    console.log('AT-[ result.all &&&&&********** ]', result.all)
   } else {
     result.all = []
   }
-
-  // result.all = isEmpty(selected)
-  //   ? []
-  //   : list.value.filter((item) => toPairs(selected).every(([k, v]) => item[k]?.includes(v)))
-  // result.all = isEmpty(selected)
-  //   ? []
-  //   : list.value.filter((item) => item.name == selected.name && selected.kind.includes(item.kind))
-
-  // result.kind = selected.kind ? list.value.filter((item) => item.kind == nFilters.kind).length : 0
-  // result.type = selected.type ? list.value.filter((item) => item.type == nFilters.type).length : 0
-  // result.name = selected.name
-  //   ? list.value.filter((item) => item.name?.includes(nFilters.name)).length
-  //   : 0
 })
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
@@ -203,11 +197,6 @@ const nameChange = () => {
   filters.kind = []
   filters.type = []
 }
-
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-// const kindChange = () => {
-//   filters.type = []
-// }
 
 const handleClick = async () => {
   console.log('AT-[ handleClick &&&&&********** ]')
@@ -220,23 +209,11 @@ const handleClick = async () => {
   window.api
     .selectFile<IList[]>()
     .then((res) => {
-      console.log('AT-[ res &&&&&********** ]', res)
+      console.log('AT-[ res &&&&&********** ]', res.length, res)
       list.value = res
 
-      // const r = res.reduce((p, c) => {
-      //   Array.from(Object.entries(c)).forEach(([k, v]) => {
-      //     p[k + 's'] = p[k + 's'] ? lodash.union([...p[k + 's'], v || '-']) : [v || '-']
-      //   })
-      //   return p
-      // }, {}) as RuleForm
-
-      // const { names } = r
-
-      // formData.names = names.sort().reverse()
-      // formData.types = types.sort().reverse()
-      // formData.kinds = kinds.sort().reverse()
-
       formData.names = lodash.union(res.map((item) => item.name))
+      console.log('AT-[ formData.names &&&&&********** ]', formData.names)
     })
     .finally(() => {
       loading.close()
@@ -246,11 +223,14 @@ const handleClick = async () => {
 const createWord = async () => {
   const data = JSON.parse(JSON.stringify(result.all))
   const { name: title } = filters
+
   const obj = {
     title,
     // ...lodash.groupBy(data, 'type'),
     list: lodash.toPairs(lodash.groupBy(data, 'type')).map(([title, detail]) => ({ title, detail }))
   }
+
+  console.log('AT-[ obj &&&&&********** ]', obj)
 
   const loading = ElLoading.service({
     lock: true,
@@ -271,7 +251,7 @@ const createWord = async () => {
 
 <style scoped lang="scss">
 .top20 {
-  width: 60% !important;
+  width: 90% !important;
   top: 25% !important;
   transform: translate(-50%, -25%) !important;
 }

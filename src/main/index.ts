@@ -2,16 +2,22 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import path, { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-
+import sizeof from 'image-size'
 import fs from 'fs'
 import os from 'os'
-import lodash from 'lodash'
+// import sharp from 'sharp'
+// import lodash from 'lodash'
 import { XMLParser } from 'fast-xml-parser'
+// import xml2js from 'xml2js'
 
 import { createReport } from 'docx-templates'
 
 const homeDir = os.homedir()
 const desktopDir = `${homeDir}/Desktop`
+
+const _env = {
+  path: ''
+}
 
 function createWindow(): BrowserWindow {
   // Create the browser window.
@@ -75,9 +81,19 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('parseFile', (_event, file) => {
     const parser = new XMLParser()
+
+    // const parser = new xml2js.Parser({
+    //   explicitArray: false, // 将其设置为 false
+    //   mergeCDATA: true // 启用 mergeCDATA
+    // })
+
     const XMLdata = fs.readFileSync(file, 'utf8')
 
-    const items = XMLdata.split('\r\n\r\n')
+    _env.path = path.dirname(file)
+    console.log('AT-[ _env.path &&&&&********** ]', _env.path)
+    // console.log('AT-[ XMLdata &&&&&********** ]', XMLdata)
+
+    const items = XMLdata.split('\n\n')
       .map((item) => {
         try {
           return parser.parse(item)
@@ -85,14 +101,38 @@ app.whenReady().then(async () => {
           return null
         }
       })
-      .filter(Boolean)
+      .filter((item) => Object.values(item).length)
+      // .filter((item) => typeof item.question.title == 'string')
+      .map((item) => {
+        if (item.question) {
+          const entries = Object.entries(item.question).map(([k, v]) => [
+            k,
+            typeof v == 'string'
+              ? v.replace(/\[#images\/(.*?)\.png\]/g, "+++IMAGE img('$1')+++")
+              : JSON.parse(
+                  JSON.stringify(v).replace(/\[#images\/(.*?)\.png\]/g, "+++IMAGE img('$1')+++")
+                )
+          ])
+
+          const question = Object.fromEntries(entries)
+          // console.log('AT-[ question &&&&&********** ]', JSON.stringify(question), '\n\n')
+
+          console.log('AT-[ question.title &&&&&********** ]', question.title)
+          question.title = question.title ? question.title.replace(/^\d+/, '') : question.title
+
+          item.question = question
+        }
+        return item
+      })
       .map(({ question, name }) => {
         return {
           ...question,
-          name: Array.isArray(name) ? lodash.union(name).toString() : name
+          type: question.type.replace(/（[^（）]*）/g, ''),
+          name
         }
       })
 
+    // console.log('AT-[ items ------------- ]', '\n', items[0])
     return items
   })
 
@@ -102,6 +142,7 @@ app.whenReady().then(async () => {
 
     const buffer = await createReport({
       template: fs.readFileSync(template),
+
       data,
       cmdDelimiter: ['<<', '>>']
     })
@@ -121,6 +162,26 @@ app.whenReady().then(async () => {
     const reportPath = path.join(desktopDir, `${data.title}_${formattedDateTime}.docx`)
 
     fs.writeFileSync(reportPath, buffer)
+
+    const againBuffer = await createReport({
+      template: fs.readFileSync(reportPath),
+      additionalJsContext: {
+        img: (str: string) => {
+          // console.log('AT-[ str &&&&&********** ]', str)
+          const imagePath = path.join(_env.path, 'images', str + '.png')
+          const { width, height } = sizeof(imagePath) as { width: number; height: number }
+          const data = fs.readFileSync(imagePath)
+          return {
+            data,
+            extension: '.png',
+            width: (width / 220) * 2.54,
+            height: (height / 220) * 2.54
+          }
+        }
+      }
+    })
+
+    fs.writeFileSync(reportPath, againBuffer)
 
     return reportPath
   })
