@@ -46,29 +46,6 @@
             </el-select>
           </el-form-item>
 
-          <!-- <el-form-item v-if="filters.name" label="考试分类">
-            <el-select
-              v-model="filters.kind"
-              placeholder="请选择考试分类"
-              multiple
-              clearable
-              filterable
-              style="width: 500px"
-              @change="kindChange"
-            >
-              <el-option
-                v-for="(item, index) in formData.kinds"
-                :key="item"
-                :label="item"
-                :value="item"
-              >
-                <div style="overflow: hidden; max-width: 500px; text-overflow: ellipsis">
-                  {{ index + 1 }}： {{ item }}
-                </div></el-option
-              >
-            </el-select>
-          </el-form-item> -->
-
           <el-form-item v-if="filters.name.length" label="题型" prop="type">
             <el-select
               v-model="filters.type"
@@ -86,8 +63,21 @@
             </el-select>
           </el-form-item>
 
+          <el-form-item label="数量" prop="total">
+            <el-input v-model.number="filters.total" clearable :max="result.all.length" />
+          </el-form-item>
+
+          <el-form-item label="模式" prop="mode">
+            <el-radio-group v-model="filters.mode">
+              <el-radio :label="1">随机</el-radio>
+              <el-radio :label="2">顺序</el-radio>
+            </el-radio-group>
+          </el-form-item>
+
           <el-form-item>
-            <el-button type="primary" @click="createWord()">生成word文档</el-button>
+            <el-button :disabled="isDisabled" type="primary" @click="createWord(ruleFormRef)">
+              生成word文档
+            </el-button>
           </el-form-item>
         </el-form>
       </el-card>
@@ -134,14 +124,39 @@ const formData = reactive<RuleForm>({
   names: []
 })
 
+const validator = (rule, value: number, callback) => {
+  if (value <= 0) {
+    callback(new Error('题目不得小于0'))
+  }
+
+  if (value > result.all.length) {
+    callback(new Error('题目不得大于' + result.all.length))
+  }
+
+  callback()
+}
+
 const rules = reactive({
-  name: [{ required: true, message: '请输入科目名称', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入科目名称', trigger: 'blur' }],
+  type: [{ required: true, message: '请选择题型' }],
+  total: [
+    { required: true, message: '最少1题' },
+    { type: 'number', validator: validator }
+  ]
 })
 
-const filters = reactive<{ name: string; kind: string[]; type: string[] }>({
+const filters = reactive<{
+  name: string
+  kind: string[]
+  type: string[]
+  total: number
+  mode: 1 | 2
+}>({
   type: [],
   kind: [],
-  name: ''
+  name: '',
+  total: 100,
+  mode: 1
 })
 
 const result = reactive<{ all: IList[]; kind: number; type: number; name: number }>({
@@ -151,11 +166,13 @@ const result = reactive<{ all: IList[]; kind: number; type: number; name: number
   name: 0
 })
 
+const isDisabled = ref(false)
+
 watch([filters, list], ([nFilters]) => {
   // console.log('AT-[ nFilters &&&&&********** ]', nFilters)
   const { pickBy, union } = lodash
-  const selected = pickBy(nFilters, (value) => value.length)
-  // console.log('AT-[ selected &&&&&********** ]', selected)
+  const selected = pickBy(nFilters, (value) => typeof value == 'number' || value.length)
+  console.log('AT-[ selected &&&&&********** ]', selected)
 
   // console.log('AT-[ elected.name &&&&&********** ]', selected.name)
   if (selected.name) {
@@ -172,15 +189,6 @@ watch([filters, list], ([nFilters]) => {
     console.log('AT-[ formData.types &&&&&********** ]', formData.types)
   }
 
-  // if (selected.kind) {
-  //   formData.types = union(
-  //     list.value
-  //       .filter((item) => item.name == selected.name)
-  //       .filter((item) => nFilters.kind.some((k) => item.kind == k))
-  //       .map((item) => item.type)
-  //   )
-  // }
-
   if (selected.type) {
     result.all = list.value
       .filter((item) => item.name == selected.name)
@@ -190,6 +198,8 @@ watch([filters, list], ([nFilters]) => {
   } else {
     result.all = []
   }
+
+  isDisabled.value = !(selected.type && selected.name)
 })
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
@@ -220,31 +230,40 @@ const handleClick = async () => {
     })
 }
 
-const createWord = async () => {
-  const data = JSON.parse(JSON.stringify(result.all))
-  const { name: title } = filters
+const createWord = async (formEl: FormInstance | undefined) => {
+  if (!formEl) return
+  formEl.validate(async (valid) => {
+    if (!valid) return
+    const { name: title, mode, total } = filters
 
-  const obj = {
-    title,
-    // ...lodash.groupBy(data, 'type'),
-    list: lodash.toPairs(lodash.groupBy(data, 'type')).map(([title, detail]) => ({ title, detail }))
-  }
+    let data = JSON.parse(JSON.stringify(result.all)).slice(0, total)
+    if (mode == 1) {
+      data = lodash.shuffle(data)
+    } else {
+      data = JSON.parse(JSON.stringify(result.all)).slice(0, total)
+    }
 
-  console.log('AT-[ obj &&&&&********** ]', obj)
+    const { toPairs, groupBy } = lodash
 
-  const loading = ElLoading.service({
-    lock: true,
-    text: 'Loading',
-    background: 'rgba(0, 0, 0, 0.7)'
-  })
+    const obj = {
+      title,
+      list: toPairs(groupBy(data, 'type')).map(([title, detail]) => ({ title, detail }))
+    }
 
-  await window.api.createDocx(obj)
+    const loading = ElLoading.service({
+      lock: true,
+      text: '生成中...',
+      background: 'rgba(0, 0, 0, 0.7)'
+    })
 
-  loading.close()
+    await window.api.createDocx(obj)
 
-  ElMessage({
-    message: '导出到桌面成功了！',
-    type: 'success'
+    loading.close()
+
+    ElMessage({
+      message: '导出到桌面成功了！',
+      type: 'success'
+    })
   })
 }
 </script>

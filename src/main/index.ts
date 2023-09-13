@@ -3,7 +3,7 @@ import path, { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import sizeof from 'image-size'
-import fs from 'fs'
+import fs from 'fs-extra'
 import os from 'os'
 // import sharp from 'sharp'
 // import lodash from 'lodash'
@@ -80,14 +80,24 @@ app.whenReady().then(async () => {
   )
 
   ipcMain.handle('parseFile', (_event, file) => {
-    const parser = new XMLParser()
+    const parser = new XMLParser({
+      cdataPropName: 'value',
+      ignoreAttributes: true
+    })
 
     // const parser = new xml2js.Parser({
     //   explicitArray: false, // 将其设置为 false
     //   mergeCDATA: true // 启用 mergeCDATA
     // })
 
-    const XMLdata = fs.readFileSync(file, 'utf8')
+    const str = fs.readFileSync(file, 'utf8')
+
+    const XMLdata = str.replace(/<(\w+)>(.*?)<\/\1>/g, (match, tag, content) => {
+      if (['title', 'explain'].includes(tag)) {
+        return `<${tag}><![CDATA[${content}]]></${tag}>`
+      }
+      return match
+    })
 
     _env.path = path.dirname(file)
     console.log('AT-[ _env.path &&&&&********** ]', _env.path)
@@ -115,13 +125,18 @@ app.whenReady().then(async () => {
           ])
 
           const question = Object.fromEntries(entries)
-          // console.log('AT-[ question &&&&&********** ]', JSON.stringify(question), '\n\n')
 
-          console.log('AT-[ question.title &&&&&********** ]', question.title)
-          question.title = question.title ? question.title.replace(/^\d+/, '') : question.title
+          question.explain = question.explain.value
+
+          question.title = question.title.value.replace(/^\d+/, '')
 
           item.question = question
         }
+
+        console.log('AT-[ question.title &&&&&********** ]', item.name)
+
+        item.name = item.name.replace(/（部分视频讲解）/g, '')
+
         return item
       })
       .map(({ question, name }) => {
@@ -132,17 +147,14 @@ app.whenReady().then(async () => {
         }
       })
 
-    // console.log('AT-[ items ------------- ]', '\n', items[0])
     return items
   })
 
   ipcMain.handle('createDocx', async (_event, option: { data: Record<string, unknown> }) => {
     const template = path.join(__dirname, '../../resources/templates/t.docx')
     const { data } = option
-
     const buffer = await createReport({
       template: fs.readFileSync(template),
-
       data,
       cmdDelimiter: ['<<', '>>']
     })
@@ -158,10 +170,14 @@ app.whenReady().then(async () => {
       })
       .replace(/\//g, '-')
       .replace(/\s/g, '_')
+      .replace(/:/g, '_')
 
     const reportPath = path.join(desktopDir, `${data.title}_${formattedDateTime}.docx`)
 
+    fs.ensureFileSync(reportPath)
     fs.writeFileSync(reportPath, buffer)
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
 
     const againBuffer = await createReport({
       template: fs.readFileSync(reportPath),
@@ -182,7 +198,6 @@ app.whenReady().then(async () => {
     })
 
     fs.writeFileSync(reportPath, againBuffer)
-
     return reportPath
   })
 
